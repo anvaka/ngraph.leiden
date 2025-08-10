@@ -2,7 +2,9 @@
 
 Leiden/Louvain community detection for ngraph.graph. Fast, deterministic (seeded), and flexible: undirected/directed modularity, CPM with resolution, multilayer aggregation, fixed nodes, and custom weights/sizes.
 
-Works with ESM and CommonJS. Built as a Vite library; tested with Vitest.
+Quick online demo: https://anvaka.github.io/ngraph.leiden/
+
+If you prefer command line: `cat graph.dot | npx ngraph.leiden` - prints node/community membership
 
 ## Install
 
@@ -239,10 +241,6 @@ const res = detectClusters(g, { fixedNodes: new Set(['x','z']), randomSeed: 11, 
 - Build library bundles: `npm run build`
 - Run tests: `npm test`
 
-## License
-
-MIT © Andrei Kashcha
-
 ## CLI
 
 This package ships a small CLI for quick community detection (via npx or installed locally).
@@ -299,3 +297,7 @@ npx ngraph.leiden \
   --evaluate --membership membership.json \
   --quality modularity
 ```
+
+## License
+
+MIT © Andrei Kashcha
