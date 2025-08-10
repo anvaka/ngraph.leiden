@@ -22,7 +22,8 @@
     "test:watch": "vitest",
     "prepublishOnly": "npm run build",
     "demo:dev": "vite --config demo/vite.config.js",
-    "demo:build": "vite build --config demo/vite.config.js",
+  "demo:build": "vite build --config demo/vite.config.js --base=/ngraph.leiden/",
+  "demo:deploy": "sh ./deploy.sh",
     "demo:preview": "vite preview --config demo/vite.config.js"
   },
   "keywords": [
