@@ -1,0 +1,45 @@
+{
+  "name": "ngraph.leiden",
+  "version": "0.1.0",
+  "description": "Leiden/Louvain community detection for ngraph.graph (JS)",
+  "type": "module",
+  "main": "dist/ngraph-leiden.cjs.js",
+  "module": "dist/ngraph-leiden.es.js",
+  "exports": {
+    ".": {
+      "import": "./dist/ngraph-leiden.es.js",
+      "require": "./dist/ngraph-leiden.cjs.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "demo:dev": "vite --config demo/vite.config.js",
+    "demo:build": "vite build --config demo/vite.config.js",
+    "demo:preview": "vite preview --config demo/vite.config.js"
+  },
+  "keywords": [
+    "ngraph",
+    "louvain",
+    "leiden",
+    "graph",
+    "community"
+  ],
+  "author": "Andrei Kashcha",
+  "license": "MIT",
+  "dependencies": {
+    "miserables": "^3.0.0",
+    "ngraph.forcelayout": "^3.3.1",
+    "ngraph.fromdot": "^7.1.0",
+    "ngraph.graph": "^20.0.1",
+    "ngraph.random": "^1.2.0",
+    "ngraph.svg": "^0.0.17",
+    "w-gl": "^0.22.0"
+  },
+  "devDependencies": {
+    "vite": "^7.1.1",
+    "vitest": "^3.2.4"
+  }
+}
