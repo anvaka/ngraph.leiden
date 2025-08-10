@@ -1,0 +1,119 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ngraph.leiden demo</title>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body { overflow: hidden; background: #0c2952; color: #eee; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+      canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .btn { padding: 6px 10px; border: 1px solid #6aa0ff; background: rgba(20,40,80,.6); color: #cfe3ff; border-radius: 4px; cursor: pointer; }
+  .btn:hover { background: rgba(20,40,80,.8); }
+      .badge { position: absolute; bottom: 8px; left: 8px; background: rgba(0,0,0,.3); padding: 4px 6px; border-radius: 4px; font-size: 12px; z-index: 2; }
+      .panel { position: absolute; top: 8px; right: 8px; width: min(360px, 92vw); max-height: calc(100% - 16px); overflow: auto; padding: 10px; background: rgba(0,0,0,.3); border: 1px solid #6aa0ff55; border-radius: 6px; color: #cfe3ff; z-index: 2; backdrop-filter: blur(2px); }
+      .panel.hidden { display: none; }
+      .panel h3 { margin: 0 0 8px; font-weight: 600; font-size: 14px; }
+      .panel .row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; margin: 6px 0; }
+      .panel label { font-size: 12px; opacity: 0.9; }
+      .panel input[type="number"], .panel select, .panel input[type="text"] { width: 120px; background: rgba(20,40,80,.6); color: #cfe3ff; border: 1px solid #6aa0ff55; border-radius: 4px; padding: 2px 4px; }
+      .panel .hint { font-size: 11px; opacity: 0.8; margin: 4px 0 0; }
+  /* Simple tree view styles */
+  .tree { margin-top: 8px; padding: 6px; background: rgba(10,20,50,.35); border: 1px solid #6aa0ff33; border-radius: 6px; }
+  .tree details { border-left: 2px solid #6aa0ff33; margin: 6px 0; padding-left: 6px; }
+  .tree summary { cursor: pointer; list-style: none; }
+  .tree summary::marker, .tree summary::-webkit-details-marker { display: none; }
+  .tree summary .twisty { display: inline-block; width: 1em; text-align: center; }
+  .tree ul { list-style: none; padding-left: 1.2em; margin: 6px 0; }
+  .tree li { font-size: 12px; opacity: 0.95; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+  .muted { opacity: 0.8; font-size: 12px; }
+      .settings-toggle { position: absolute; top: 8px; right: 8px; z-index: 3; width: 36px; height: 36px; border-radius: 18px; display: grid; place-items: center; }
+      @media (max-width: 640px) {
+        .panel { 
+          width: calc(100% - 16px); 
+          top: 0; left: 0;
+        }
+      }
+    </style>
+    <script type="module" crossorigin src="/ngraph.leiden/assets/index-CcmuXt4y.js"></script>
+  </head>
+  <body>
+    <canvas id="cnv"></canvas>
+  <button type="button" id="settingsToggle" class="btn settings-toggle" title="Settings">⚙️</button>
+  <form id="configForm" class="panel hidden">
+      <h3>Community detection</h3>
+      <div class="row">
+        <label for="quality">quality</label>
+        <select name="quality" id="quality">
+          <option value="modularity" selected>modularity</option>
+          <option value="cpm">cpm</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="resolution">resolution (cpm)</label>
+        <input type="number" name="resolution" id="resolution" step="0.1" placeholder="1.0" />
+      </div>
+      <div class="row">
+        <label for="directed">directed</label>
+        <input type="checkbox" name="directed" id="directed" />
+      </div>
+      <div class="row">
+        <label for="randomSeed">randomSeed</label>
+        <input type="number" name="randomSeed" id="randomSeed" placeholder="42" />
+      </div>
+      <div class="row">
+        <label for="candidateStrategy">candidateStrategy</label>
+        <select name="candidateStrategy" id="candidateStrategy">
+          <option value="neighbors" selected>neighbors</option>
+          <option value="all">all</option>
+          <option value="random">random</option>
+          <option value="random-neighbor">random-neighbor</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="allowNewCommunity">allowNewCommunity</label>
+        <input type="checkbox" name="allowNewCommunity" id="allowNewCommunity" />
+      </div>
+      <div class="row">
+        <label for="maxCommunitySize">maxCommunitySize</label>
+        <input type="number" name="maxCommunitySize" id="maxCommunitySize" placeholder="Infinity" />
+      </div>
+      <div class="row">
+        <label for="refine">refine</label>
+        <input type="checkbox" name="refine" id="refine" checked />
+      </div>
+      <div class="row">
+        <label for="linkWeightExpr">linkWeight fn</label>
+        <input type="text" name="linkWeightExpr" id="linkWeightExpr" placeholder="l => l.data?.weight ?? 1" />
+      </div>
+      <div class="row">
+        <label for="nodeSizeExpr">nodeSize fn</label>
+        <input type="text" name="nodeSizeExpr" id="nodeSizeExpr" placeholder="n => n.data?.size ?? 1" />
+      </div>
+      <div class="row">
+        <label for="maxLevels">maxLevels</label>
+        <input type="number" name="maxLevels" id="maxLevels" placeholder="" />
+      </div>
+      <div class="row">
+        <label for="maxLocalPasses">maxLocalPasses</label>
+        <input type="number" name="maxLocalPasses" id="maxLocalPasses" placeholder="" />
+      </div>
+      <div class="row">
+        <label for="cpmMode">cpmMode</label>
+        <select name="cpmMode" id="cpmMode">
+          <option value="unit" selected>unit</option>
+          <option value="size-aware">size-aware</option>
+        </select>
+      </div>
+      <div class="row" style="grid-template-columns: 1fr 1fr;">
+        <button type="button" id="layoutBtn" class="btn">Layout 200 steps</button>
+        <button type="button" id="detectBtn" class="btn">Detect communities</button>
+      </div>
+      <div class="hint">Change inputs and press "Detect communities". Drag & drop .dot to load graph.</div>
+  <div class="hint">Quality: <span id="qualityValue">—</span></div>
+  <div class="hint">Communities: <span id="communityStats">—</span></div>
+  <div id="communityTree" class="tree" aria-label="Graph tree" role="tree"></div>
+    </form>
+    <div class="badge">Drag & drop .dot to load • WebGL</div>
+  </body>
+</html>
