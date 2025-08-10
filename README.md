@@ -242,3 +242,60 @@ const res = detectClusters(g, { fixedNodes: new Set(['x','z']), randomSeed: 11, 
 ## License
 
 MIT © Andrei Kashcha
+
+## CLI
+
+This package ships a small CLI for quick community detection (via npx or installed locally).
+
+Input format is auto-detected by file extension (.dot/.gv/.json) or by content (tries JSON first, then DOT). Use --format to override.
+
+Usage examples
+
+- From a DOT file
+
+```sh
+npx ngraph.leiden --in graph.dot --out membership.json
+```
+
+- From stdin
+
+```sh
+cat graph.dot | npx ngraph.leiden --membership-only
+```
+
+- From a JSON edgelist (either an array of {source,target,weight?} or {nodes,links})
+
+```sh
+cat edges.json | npx ngraph.leiden > out.json
+```
+
+Options
+
+- `--directed` — treat input as directed
+- `--quality` modularity|cpm (default modularity)
+- `--resolution <gamma>` — CPM resolution parameter
+- `--candidate-strategy` neighbors|all|random|random-neighbor
+- `--max-levels`, `--max-local-passes`, `--random-seed`
+- `--max-community-size <num>`
+- `--allow-new-community`, `--no-refine`
+- `--fixed <file>` — newline-separated node ids to keep fixed at level 0
+- `--membership-only` — print only the id->community map
+
+Output
+
+- Defaults to JSON on stdout; use `--out <file>` to write to a file.
+- Formats:
+  - JSON (default): full object `{membership, meta}` or mapping only with `--membership-only`.
+  - CSV: `--out-format csv` prints header `nodeId,communityId`.
+  - DOT: `--out-format dot` overlays `community="..."` on nodes using ngraph.todot.
+
+Quality-only evaluation
+
+Evaluate modularity/CPM for an existing membership mapping without running detection:
+
+```sh
+npx ngraph.leiden \
+  --in graph.dot --format dot \
+  --evaluate --membership membership.json \
+  --quality modularity
+```
