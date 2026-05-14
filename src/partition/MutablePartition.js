@@ -41,6 +41,14 @@ export function makePartition(graph) {
     communityTotalStrength = growFloat(communityTotalStrength, growTo);
     communityTotalOutStrength = growFloat(communityTotalOutStrength, growTo);
     communityTotalInStrength = growFloat(communityTotalInStrength, growTo);
+    // Scratch buffers are indexed by community id too, so they must grow in lock-step.
+    if (newCount > neighborEdgeWeightToCommunity.length) {
+      neighborEdgeWeightToCommunity = growFloat(neighborEdgeWeightToCommunity, growTo);
+      outEdgeWeightToCommunity = growFloat(outEdgeWeightToCommunity, growTo);
+      inEdgeWeightFromCommunity = growFloat(inEdgeWeightFromCommunity, growTo);
+      isCandidateCommunity = growUint8(isCandidateCommunity, growTo);
+      candidateCommunities = growInt(candidateCommunities, growTo);
+    }
   }
 
   function initializeAggregates() {
@@ -138,38 +146,43 @@ export function makePartition(graph) {
   }
 
   // Quality support: undirected modularity
-  const twoMUndirected = graph.totalWeight; // sum of strengths (2m for undirected)
+  // ΔQ for moving v from oldC to newC. Q = Σ_c [2*L_c/m2 - (d_c/m2)²] where L_c counts
+  // each undirected edge once. The remove term must use (Σtot_old - k_v) because v's own
+  // strength leaves with v; omitting this -k_v gives a small but real upward bias to gains
+  // (a known Blondel-formula gotcha). The leading 2× keeps Δ on the same scale as Q.
+  const twoMUndirected = graph.totalWeight; // sum of strengths (2m for undirected, modulo self-loop convention)
   function deltaModularityUndirected(v, newC) {
     const oldC = nodeCommunity[v];
     if (newC === oldC) return 0;
     const strengthV = graph.strengthOut[v];
-    const weightToNew = (newC < neighborEdgeWeightToCommunity.length ? (neighborEdgeWeightToCommunity[newC] || 0) : 0); // weight from v to newC
-    const weightToOld = neighborEdgeWeightToCommunity[oldC] || 0; // weight from v to oldC
+    const weightToNew = (newC < neighborEdgeWeightToCommunity.length ? (neighborEdgeWeightToCommunity[newC] || 0) : 0);
+    const weightToOld = neighborEdgeWeightToCommunity[oldC] || 0;
     const totalStrengthNew = newC < communityTotalStrength.length ? communityTotalStrength[newC] : 0;
     const totalStrengthOld = communityTotalStrength[oldC];
-
-    // Modularity gain formula (Blondel 2008), adjusted for removal/addition
-    const gain_remove = - (weightToOld / twoMUndirected - (strengthV * totalStrengthOld) / (twoMUndirected * twoMUndirected));
-    const gain_add = (weightToNew / twoMUndirected - (strengthV * totalStrengthNew) / (twoMUndirected * twoMUndirected));
-    return gain_remove + gain_add;
+    const m2 = twoMUndirected;
+    const gain_remove = -(weightToOld / m2 - (strengthV * (totalStrengthOld - strengthV)) / (m2 * m2));
+    const gain_add =     (weightToNew / m2 - (strengthV * totalStrengthNew) / (m2 * m2));
+    return 2 * (gain_remove + gain_add);
   }
-  // Directed modularity (Leicht-Newman). Here m = totalWeight (sum of all edges' weights)
+  // Directed modularity (Leicht-Newman). Q = Σ_c [L_c/m - Σout_c·Σin_c/m²].
+  // When v leaves oldC, oldC's Σout drops by k_out_v and Σin by k_in_v; the remove term
+  // must use (Σ_old - k_v_*) accordingly to avoid a constant upward bias on all gains.
   function deltaModularityDirected(v, newC) {
     const oldC = nodeCommunity[v];
     if (newC === oldC) return 0;
-    const totalEdgeWeight = graph.totalWeight;
-    const strengthOutV = graph.strengthOut[v];
-    const strengthInV = graph.strengthIn[v];
+    const m = graph.totalWeight;
+    const k_out = graph.strengthOut[v];
+    const k_in = graph.strengthIn[v];
     const inFromNew = (newC < inEdgeWeightFromCommunity.length ? (inEdgeWeightFromCommunity[newC] || 0) : 0);
     const outToNew = (newC < outEdgeWeightToCommunity.length ? (outEdgeWeightToCommunity[newC] || 0) : 0);
     const inFromOld = inEdgeWeightFromCommunity[oldC] || 0;
     const outToOld = outEdgeWeightToCommunity[oldC] || 0;
-    const totalInStrengthNew = (newC < communityTotalInStrength.length ? communityTotalInStrength[newC] : 0);
-    const totalOutStrengthNew = (newC < communityTotalOutStrength.length ? communityTotalOutStrength[newC] : 0);
-    const totalInStrengthOld = communityTotalInStrength[oldC];
-    const totalOutStrengthOld = communityTotalOutStrength[oldC];
-    const deltaInternal = (inFromNew + outToNew - inFromOld - outToOld) / totalEdgeWeight;
-    const deltaExpected = (strengthOutV * (totalInStrengthNew - totalInStrengthOld) + strengthInV * (totalOutStrengthNew - totalOutStrengthOld)) / (totalEdgeWeight * totalEdgeWeight);
+    const T_new = (newC < communityTotalInStrength.length ? communityTotalInStrength[newC] : 0);
+    const F_new = (newC < communityTotalOutStrength.length ? communityTotalOutStrength[newC] : 0);
+    const T_old = communityTotalInStrength[oldC];
+    const F_old = communityTotalOutStrength[oldC];
+    const deltaInternal = (inFromNew + outToNew - inFromOld - outToOld) / m;
+    const deltaExpected = (k_out * (T_new - (T_old - k_in)) + k_in * (F_new - (F_old - k_out))) / (m * m);
     return deltaInternal - deltaExpected;
   }
 
@@ -211,7 +224,11 @@ export function makePartition(graph) {
       communityTotalStrength[oldC] -= strengthOutV; communityTotalStrength[newC] += strengthOutV;
     }
 
-    // internal weights: subtract connections to old, add to new
+    // Internal-weight bookkeeping uses the "counted-once" convention: each undirected
+    // edge contributes its weight once to internalEdgeWeight, each self-loop once,
+    // each directed edge once. When v moves out of oldC we lose w(v, oldC\v) + selfLoop_v,
+    // and newC gains w(v, newC) + selfLoop_v. Accumulators already exclude self-loops
+    // because the adapter doesn't push them into outEdges/inEdges.
     if (graph.directed) {
       const outToOld = outEdgeWeightToCommunity[oldC] || 0;
       const inFromOld = inEdgeWeightFromCommunity[oldC] || 0;
@@ -222,8 +239,8 @@ export function makePartition(graph) {
     } else {
       const weightToOld = neighborEdgeWeightToCommunity[oldC] || 0;
       const weightToNew = neighborEdgeWeightToCommunity[newC] || 0;
-      communityInternalEdgeWeight[oldC] -= 2 * weightToOld + selfLoopWeight;
-      communityInternalEdgeWeight[newC] += 2 * weightToNew + selfLoopWeight;
+      communityInternalEdgeWeight[oldC] -= weightToOld + selfLoopWeight;
+      communityInternalEdgeWeight[newC] += weightToNew + selfLoopWeight;
     }
 
     nodeCommunity[v] = newC;
@@ -272,8 +289,10 @@ export function makePartition(graph) {
       } else {
         newTotalStrength[c] += graph.strengthOut[i];
       }
+      // self-loops are tracked separately and must be re-added to internal weight.
+      if (graph.selfLoop[i] !== 0) newInternalEdgeWeight[c] += graph.selfLoop[i];
     }
-    // recompute wIn by scanning edges once
+    // recompute wIn by scanning edges once (self-loops are NOT in outEdges)
     if (graph.directed) {
       for (let i = 0; i < n; i++) {
         const ci = nodeCommunity[i];
@@ -312,17 +331,20 @@ export function makePartition(graph) {
   function getCommunityTotalSize(c) { return c < communityTotalSize.length ? communityTotalSize[c] : 0; }
   function getCommunityNodeCount(c) { return c < communityNodeCount.length ? communityNodeCount[c] : 0; }
 
-  // Expose minimal API
+  // Expose minimal API. Aggregate arrays are exposed through getters because
+  // compactCommunityIds and ensureCommCapacity reassign the closure variables to
+  // fresh TypedArrays; capturing them by value here would leave external readers
+  // pointing at the pre-resize array and silently reading stale data.
   return {
     n,
     get communityCount() { return communityCount; },
     nodeCommunity,
-    communityTotalSize,
-    communityNodeCount,
-    communityInternalEdgeWeight,
-    communityTotalStrength,
-    communityTotalOutStrength,
-    communityTotalInStrength,
+    get communityTotalSize() { return communityTotalSize; },
+    get communityNodeCount() { return communityNodeCount; },
+    get communityInternalEdgeWeight() { return communityInternalEdgeWeight; },
+    get communityTotalStrength() { return communityTotalStrength; },
+    get communityTotalOutStrength() { return communityTotalOutStrength; },
+    get communityTotalInStrength() { return communityTotalInStrength; },
     initializeAggregates,
     accumulateNeighborCommunityEdgeWeights,
     getCandidateCommunityCount: () => candidateCommunityCount,
@@ -343,3 +365,4 @@ export function makePartition(graph) {
 
 function growFloat(a, to) { const b = new Float64Array(to); b.set(a); return b; }
 function growInt(a, to) { const b = new Int32Array(to); b.set(a); return b; }
+function growUint8(a, to) { const b = new Uint8Array(to); b.set(a); return b; }

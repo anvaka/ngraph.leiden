@@ -1,7 +1,6 @@
-import { runLouvainUndirectedModularity } from '../optimise/optimiser.js'
-import { qualityModularity } from '../quality/modularity.js'
-import { qualityCPM, qualityCPMSizeAware } from '../quality/cpm.js'
+import { runLeiden } from '../optimise/optimiser.js'
 import { aggregateLayers } from '../adapter/aggregateLayers.js'
+import { evaluateQuality } from '../evaluate.js'
 
 export function detectClusters(graph, options = {}) {
   // Accept a single graph or an array of layers { graph, weight?, linkWeight?, nodeSize? }
@@ -9,19 +8,17 @@ export function detectClusters(graph, options = {}) {
   if (Array.isArray(graph)) {
     inputGraph = aggregateLayers(graph, { directed: !!options.directed });
   }
-  const { graph: finalGraph, partition, levels, originalToCurrent, originalNodeIds } = runLouvainUndirectedModularity(inputGraph, options);
+  const { levels, originalToCurrent, originalNodeIds } = runLeiden(inputGraph, options);
   // Map each original node index -> class at last level via originalToCurrent
   const idToClass = new Map();
   for (let i = 0; i < originalNodeIds.length; i++) {
-    const comm = originalToCurrent[i];
-    idToClass.set(originalNodeIds[i], comm);
+    idToClass.set(originalNodeIds[i], originalToCurrent[i]);
   }
 
   return {
     getClass(nodeId) { return idToClass.get(nodeId); },
     getCommunities() {
       const out = new Map();
-      // Reconstruct from idToClass
       for (const [id, c] of idToClass) {
         if (!out.has(c)) out.set(c, []);
         out.get(c).push(id);
@@ -29,14 +26,13 @@ export function detectClusters(graph, options = {}) {
       return out;
     },
     quality() {
-      const q = (options.quality || 'modularity').toLowerCase();
-      if (q === 'cpm') {
-        const gamma = typeof options.resolution === 'number' ? options.resolution : 1.0;
-        if ((options.cpmMode || 'unit') === 'size-aware') return qualityCPMSizeAware(partition, finalGraph, gamma);
-        return qualityCPM(partition, finalGraph, gamma);
-      } else {
-        return qualityModularity(partition, finalGraph);
-      }
+      // Evaluate on the original (base) graph so the reported quality matches
+      // what a user would compute with their own implementation given the
+      // membership map. Coarse-level partition bookkeeping would not reflect
+      // unit-mode CPM correctly (its node count is coarse, not base).
+      const membership = {};
+      for (const [id, c] of idToClass) membership[id] = c;
+      return evaluateQuality(inputGraph, membership, options);
     },
     toJSON() {
       const membershipObj = {};

@@ -16,12 +16,16 @@ function makeWeightedSizeGraph() {
 describe('CPM size-aware mode', () => {
   it('penalizes large-size communities more than unit mode', () => {
     const g = makeWeightedSizeGraph()
-    const gamma = 0.5
+    // γ must be small enough that the size-5 A nodes can actually overcome the
+    // size penalty and merge. 6 internal edges − γ·binom(20,2) > -4·γ·binom(5,2)
+    // ⟹ γ < 0.04. Pick 0.02 so both A and B form.
+    const gamma = 0.02
     const unit = detectClusters(g, { quality: 'cpm', cpmMode: 'unit', resolution: gamma, randomSeed: 3 })
     const sized = detectClusters(g, { quality: 'cpm', cpmMode: 'size-aware', resolution: gamma, randomSeed: 3 })
     // With size-aware penalty, quality should be lower or equal (more penalty) for the same partition
     expect(sized.quality()).toBeLessThanOrEqual(unit.quality())
-    // Both should still find 2 communities for this simple case
+    // Both runs use the same (size-aware) optimisation, so they produce the same partition:
+    // two communities matching the two cliques.
     const count = (cl) => new Set([0,1,2,3,4,5,6,7].map(i => cl.getClass(i))).size
     expect(count(unit)).toBe(2)
     expect(count(sized)).toBe(2)

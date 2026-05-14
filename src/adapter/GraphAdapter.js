@@ -37,9 +37,10 @@ export function makeGraphAdapter(graph, opts = {}) {
   const inEdges = new Array(n);
   for (let i = 0; i < n; i++) { outEdges[i] = []; inEdges[i] = []; }
 
-  // Populate from graph
+  // Populate from graph. Self-loops are tracked in selfLoop[v] only and NOT pushed
+  // into outEdges/inEdges. This keeps the neighbour accumulator clean — w(v, C) refers
+  // to edges v↔(C\{v}) only — so ΔQ formulas don't need self-loop adjustments.
   if (directed) {
-    // Keep edges as-is for directed graphs
     graph.forEachLink(l => {
       const from = idToIndex.get(l.fromId);
       const to = idToIndex.get(l.toId);
@@ -47,6 +48,9 @@ export function makeGraphAdapter(graph, opts = {}) {
       const w = +linkWeight(l) || 0;
       if (from === to) {
         selfLoop[from] += w;
+        strengthOut[from] += w;
+        strengthIn[from] += w;
+        return;
       }
       outEdges[from].push({ to, w });
       inEdges[to].push({ from, w });
@@ -93,14 +97,15 @@ export function makeGraphAdapter(graph, opts = {}) {
       strengthIn[i] += w; strengthIn[j] += w;
     }
 
-    // Add self-loops into adjacency and strengths once (consistent with directed path)
+    // Undirected self-loops: a self-loop with weight w contributes 2w to degree
+    // (classical convention — the adjacency matrix diagonal A_vv equals 2w because
+    // both endpoints are at v). This keeps modularity invariant under coarsening
+    // (when an internal edge {u,v} becomes a self-loop of the coarse community).
     for (let v = 0; v < n; v++) {
       const w = selfLoop[v];
       if (w !== 0) {
-        outEdges[v].push({ to: v, w });
-        inEdges[v].push({ from: v, w });
-        strengthOut[v] += w;
-        strengthIn[v] += w;
+        strengthOut[v] += 2 * w;
+        strengthIn[v] += 2 * w;
       }
     }
   }
